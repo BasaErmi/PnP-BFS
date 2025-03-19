@@ -1,14 +1,14 @@
 import numpy as np
 import scipy.io as sio
-from mpmath import zeros
 from numpy.linalg import norm
 import time
 import matplotlib.pyplot as plt
 from bm3d import bm3d
+from prettytable import PrettyTable
 from numpy.ma import reshape
 
 
-def denoiser(frame, method):
+def denoiser(frame, method, noise_level):
     """
     对单帧图像进行去噪处理。
     参数:
@@ -18,9 +18,6 @@ def denoiser(frame, method):
     返回:
       去噪后的图像（2D numpy 数组）
     """
-    # if method == 'L1':
-    #     denoised_frame = lp_thresholding_matrix(frame, weight, p)[0]
-    #     return denoised_frame
     if method == 'BM3D':
         # 使用 BM3D 去噪。确保安装了 bm3d 库，例如通过 pip install bm3d
         # BM3D 要求图像为浮点型并归一化到 [0,1]
@@ -31,7 +28,7 @@ def denoiser(frame, method):
         else:
             frame_norm = frame.copy().astype(np.float32)
         # weight 作为噪声标准差 sigma，通常取值范围在 0.01~0.1 之间（根据实际噪声水平调整）
-        denoised_norm = bm3d(frame_norm, sigma_psd=0.01)
+        denoised_norm = bm3d(frame_norm, sigma_psd=noise_level)
         # 恢复到原始灰度范围
         denoised_frame = denoised_norm * (frame_max - frame_min) + frame_min
         return denoised_frame
@@ -49,7 +46,6 @@ def display(matrix, image_height, image_width, num_images, image_index, title="M
         image = reshape_matrix[:, :, image_index]
     plt.figure(figsize=(6, 6))
     plt.imshow(image, cmap="gray")  # 以灰度图显示
-    plt.colorbar()
     plt.title(title)
     plt.axis("off")
     plt.show()
@@ -87,7 +83,7 @@ def lp_thresholding_matrix(Y, lam, p, tol=1e-12, max_newton_iter=1000):
     return X, iter_total
 
 
-def admm_new(H, mu, p, opts):
+def admm_new(H, mu, p, opts, noise_level, is_denoise=True):
     """
     针对如下优化问题的 ADMM 求解：
         min_{ell, S, Z}  0.5*||H - A(Z)||_F^2 + Psi(ell) + Phi(S)
@@ -111,7 +107,7 @@ def admm_new(H, mu, p, opts):
 
     tau = opts.get('tau', 0.8)
     rho = opts.get('rho', 1.0)
-    Outertol = opts.get('tol', 1e-4)
+    Outertol = opts.get('Outertol', 1e-2)
     InnerTol = opts.get('InnerTol', 5e-3)
     maxiter = opts.get('maxiter', 1000)
     display = opts.get('display', 1)
@@ -142,11 +138,11 @@ def admm_new(H, mu, p, opts):
         raise ValueError("identity 和 blurring 选项设置错误")
 
     # rho_bound 的计算
-    term1 = lambda_max / tau
-    term2 = lambda_max * tau
-    term3 = -0.5 * lambda_min + 0.5 * np.sqrt(lambda_min ** 2 + 8 * lambda_max ** 2 / tau)
-    term4 = -0.5 * lambda_min + 0.5 * np.sqrt(lambda_min ** 2 + 8 * tau ** 2 * lambda_max ** 2 / (1 + tau - tau ** 2))
-    rho_bound = max([term1, term2, term3, term4])
+    # term1 = lambda_max / tau
+    # term2 = lambda_max * tau
+    # term3 = -0.5 * lambda_min + 0.5 * np.sqrt(lambda_min ** 2 + 8 * lambda_max ** 2 / tau)
+    # term4 = -0.5 * lambda_min + 0.5 * np.sqrt(lambda_min ** 2 + 8 * tau ** 2 * lambda_max ** 2 / (1 + tau - tau ** 2))
+    # rho_bound = max([term1, term2, term3, term4])
 
     # 初始 rho 及自适应参数
     # if heuristic:
@@ -177,15 +173,18 @@ def admm_new(H, mu, p, opts):
         # 令 M^k = Z - S - Lambda/rho, 计算各列的平均值 m_bar
         M = Z - S - Lambda / rho
         m_bar = np.mean(M, axis=1)  # m_bar shape (m,)
-        # ell = m_bar.reshape(m,1)
-        # print(np.tile(ell, (1, n)).shape)
-        # 使用去噪器对 m_bar 进行去噪，即计算其proximal map
-        # 重构为二维图像，注意这里使用 Fortran 顺序与原来投影保持一致
-        m_reshape = m_bar.reshape(picsize, order='F')
-        # # 对图像进行去噪
-        m_denoised = denoiser(m_reshape, method='BM3D')
-        # # 将去噪后的图像展平并保存
-        ell = m_denoised.flatten(order='F').reshape(m, 1)
+
+        if is_denoise:
+            # 使用去噪器对 m_bar 进行去噪，即计算其proximal map
+            # 重构为二维图像，注意这里使用 Fortran 顺序与原来投影保持一致
+            m_reshape = m_bar.reshape(picsize, order='F')
+            # 对图像进行去噪
+            m_denoised = denoiser(m_reshape, method='BM3D', noise_level=noise_level - 0.01)
+            # 将去噪后的图像展平并保存
+            ell = m_denoised.flatten(order='F').reshape(m, 1)
+        else:
+            # 如果不进行去噪，则直接使用 m_bar
+            ell = m_bar.reshape(m, 1)
 
 
         # -----------------------------
@@ -235,41 +234,37 @@ def admm_new(H, mu, p, opts):
     return ell, S, Z, k
 
 
-def run_me():
+def background_extraction(opts, noise_level=0, is_denoise=False, dataset_name='Hall'):
     """
     主函数：加载数据、设置参数、调用修改后的 ADMM 方法并显示结果
     """
     # 加载数据（确保 hall.mat 文件中包含 data, label, groundtruth, picture_size 等变量）
-    mat_contents = sio.loadmat('hall.mat')
+    mat_contents = sio.loadmat(f'data/{dataset_name}.mat')
     D = mat_contents['data']
     label = mat_contents.get('label', np.arange(D.shape[1])).flatten() - 1 # 匹配matlab的1-based index
     groundtruth = mat_contents.get('groundtruth', np.zeros_like(D)).flatten(order='F')
     picture_size = tuple(mat_contents.get('picture_size', [int(np.sqrt(D.shape[0]))] * 2))
 
-    mu = 1e-2
-    p = 0.54
+    # 模拟D被高斯噪声污染,每张图片的噪声都固定一样
+    np.random.seed(42)
 
-    opts = {
-        'tau': 0.8,
-        'rho': 1.0,  # 惩罚参数
-        'Outtol': 1e-4,
-        'InnerTol': 5e-3,
-        'maxiter': 2000,
-        'upbd': 1,
-        'identity': 1,  # 若为1，则采用单位算子；若采用模糊算子则设为0并设置 blurring=1
-        'blurring': 0,
-        'display': 1,
-        'displayfreq': 1,
-        'picsize': (picture_size[0]),  # 图像大小
-        'heuristic': 1,
-        'sigma1': 0.6,
-        'sigma2': 0.3,
-        'rho_beta': 1.1,
-        # 若 blurring==1，需添加 'Ac', 'Ar', 'picsize' 参数
-    }
+    opts['picsize'] = picture_size[0]
+
+    noise = np.zeros(picture_size[0])
+    noise += noise_level * np.random.randn(*noise.shape)
+
+    noise_D = np.zeros(D.shape)
+    for i in range(D.shape[1]):
+        D_frame = D[:, i].reshape(picture_size[0], order="F")
+        D_frame_noised = D_frame + noise
+        noise_D[:, i] = D_frame_noised.flatten(order="F")
+    D = noise_D
+
+    mu = opts['mu']
+    p = opts['p']
 
     start_time = time.time()
-    l_out, S_out, Z_out,Iter_out = admm_new(D, mu, p, opts)
+    l_out, S_out, Z_out,Iter_out = admm_new(D, mu, p, opts, noise_level, is_denoise=is_denoise)
     elapsed_time = time.time() - start_time
 
     # 目标函数值
@@ -289,9 +284,21 @@ def run_me():
     recall = len(ind_correct) / (len(ind_g))
     F = 2 * precision * recall / (precision + recall)
 
-    print("\n$p$ & $mu$ & $tau$ & Iter & Time(s) & spr & F-measure &f_val")
-    print("{:g}  &  {:.0e}  & {:.1f} & {:d} & {:.2f} & {:.4f} & {:.4f} & {:.4f}".format(
-        p, mu, opts['tau'], Iter_out, elapsed_time, spr, F, f_val))
+    # 创建表格
+    table = PrettyTable()
+    table.field_names = ["Dataset", "is_denoise", "p", "mu", "tau", "rho", "Iter", "Outertol", "Time(s)", "spr", "F-measure", "f_val"]
+    table.add_row([dataset_name, is_denoise, p, f"{mu:.0e}", opts['tau'], opts['rho'],Iter_out, f"{opts['Outertol']:.0e}", f"{elapsed_time:.2f}",
+                   f"{spr:.4f}", f"{F:.4f}", f"{f_val:.4f}"])
+
+    # 打印表格
+    print(table)
+
+    # 记录实验结果到本地 txt 文件
+    log_file = "experiment_results.txt"
+    with open(log_file, "a") as f:
+        f.write(f"================ Experiment {time.strftime('%Y-%m-%d %H:%M:%S')} ================\n")
+        f.write(table.get_string())  # 直接保存表格
+        f.write("\n==========================================================================\n\n")
 
     # 存储结果
     result = {
@@ -304,13 +311,37 @@ def run_me():
         'f_val': f_val,
     }
 
-    sio.savemat('result_denoise_with_separation_0.01.mat', result)
+    # sio.savemat('result_denoise_with_separation_0.01.mat', result)
 
     # 显示结果（根据实际数据可能需要调整 reshape 操作）
-    display(D, *picture_size[0], D.shape[1], label, title="Original")
+    # display(D, *picture_size[0], D.shape[1], label, title="Original")
     display(l_out, *picture_size[0], 1, -1, title="Background")
-    display(S_out, *picture_size[0], D.shape[1], label, title="Foreground")
+    # display(S_out, *picture_size[0], D.shape[1], label, title="Foreground")
+
+    if not is_denoise:
+        l_out_denoised = denoiser(l_out.reshape(*picture_size[0], order='F'), method='BM3D', noise_level=noise_level)
+        display(l_out_denoised, *picture_size[0], 1, -1, title="Denoised Background")
 
 
 if __name__ == "__main__":
-    run_me()
+    opts = {
+        'tau': 0.8,
+        'rho': 1.0,  # 惩罚参数
+        'Outertol': 1e-3,
+        'InnerTol': 1e-2,
+        'maxiter': 2000,
+        'upbd': 1,
+        'identity': 1,  # 若为1，则采用单位算子；若采用模糊算子则设为0并设置 blurring=1
+        'blurring': 0,
+        'display': 1,
+        'displayfreq': 1,
+        'picsize': None,  # 图像大小
+        'heuristic': 1,
+        'sigma1': 0.6,
+        'sigma2': 0.3,
+        'rho_beta': 1.1,
+        'mu': 5e-2,  # S 惩罚参数
+        'p': 1,  # S 上的 lp 惩罚参数
+        # 若 blurring==1，需添加 'Ac', 'Ar', 'picsize' 参数
+    }
+    background_extraction(opts, noise_level=0.05, is_denoise=False, dataset_name='Shoppingmall')
