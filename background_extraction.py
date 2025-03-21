@@ -25,13 +25,11 @@ def background_extraction(opts, noise_level=0, dataset_name='Hall'):
     if noise_type == 'random':
         D = D + noise_level * np.random.randn(*D.shape)
     else:
-        # noise = np.zeros(picture_size[0])
-        # noise += noise_level * np.random.randn(*noise.shape)
+        noise = np.zeros(picture_size[0])
+        noise += noise_level * np.random.randn(*noise.shape)
 
         noise_D = np.zeros(D.shape)
         for i in range(D.shape[1]):
-            noise = np.zeros(picture_size[0])
-            noise += noise_level * np.random.randn(*noise.shape)
             D_frame = D[:, i].reshape(picture_size[0], order="F")
             D_frame_noised = D_frame + noise
             noise_D[:, i] = D_frame_noised.flatten(order="F")
