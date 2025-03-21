@@ -3,23 +3,28 @@
 ## Modeling and Algorithm Iteration Framework
 
 This repository implements image denoising and background extraction algorithms based on deep learning and traditional optimization methods. It primarily implements a Plug-and-Play Alternating Direction Method of Multipliers (ADMM) for solving the following optimization problem:
-\[
+$
 \min_{\ell, S, Z} \; \frac{1}{2} \|H - \mathcal{A}(Z)\|_F^2 + \Psi(\ell) + \Phi(S), \\\text{s.t.} \quad S + \ell \cdot 1^T = Z
-\]
+$
+
 The corresponding ADMM algorithm is:
-$$
+
+$
 \ell^{k+1} = \arg\min_\ell \; \Psi(\ell) + \frac{\rho}{2}\Big\| S^k + \ell\,\mathbf{1}^\top - Z^k + \frac{\Lambda^k}{\rho} \Big\|_F^2, \\[1ex]
 S^{k+1} = \arg\min_S \; \Phi(S) + \frac{\rho}{2}\Big\| S + \ell^{k+1}\mathbf{1}^\top - Z^k + \frac{\Lambda^k}{\rho} \Big\|_F^2,\\[1ex]
 Z^{k+1} = \arg\min_Z \; \frac{1}{2}\|H - \mathcal{A}(Z)\|_F^2 + \frac{\rho}{2}\Big\| S^{k+1} + \ell^{k+1}\mathbf{1}^\top - Z + \frac{\Lambda^k}{\rho} \Big\|_F^2, \\[1ex]
 \Lambda^{k+1} = \Lambda^k + \tau \rho\Big( S^{k+1} + \ell^{k+1}\mathbf{1}^\top - Z^{k+1} \Big)
-$$
+$
+
 The detailed iteration scheme is as follows:
-$$
+
+$
 \ell^{k+1} = \operatorname{prox}_{\psi_\sigma}\Bigg(\frac{1}{n}\sum_{j=1}^n \Bigl(Z^k - S^k - \frac{\Lambda^k}{\rho}\Bigr)_j\Bigg)\\
 S^{k+1} = \frac{\mu}{\rho} \|S\|^p_p +  \frac{1}{2}\Big\|S - \Big(Z^k - L^{k+1} - \frac{\Lambda^k}{\rho}\Big)\Big\|_F^2 \\
 Z^{k+1} = (\mathcal{A}^*\mathcal{A}+\rho I)^{-1} \Big[\mathcal{A}^*(H) + \rho S^{k+1}+\rho \ell^{k+1}\,\mathbf{1}^\top+\Lambda^k\Big] \\
 \Lambda^{k+1} = \Lambda^k + \tau\rho \Big( L^{k+1} + S^{k+1} - Z^{k+1} \Big)
-$$
+$
+
 
 ## **Running Example**
 
