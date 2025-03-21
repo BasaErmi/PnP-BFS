@@ -3,9 +3,9 @@
 ## Modeling and Algorithm Iteration Framework
 
 This repository implements image denoising and background extraction algorithms based on deep learning and traditional optimization methods. It primarily implements a Plug-and-Play Alternating Direction Method of Multipliers (ADMM) for solving the following optimization problem:
-$$
+\[
 \min_{\ell, S, Z} \; \frac{1}{2} \|H - \mathcal{A}(Z)\|_F^2 + \Psi(\ell) + \Phi(S), \\\text{s.t.} \quad S + \ell \cdot 1^T = Z
-$$
+\]
 The corresponding ADMM algorithm is:
 $$
 \ell^{k+1} = \arg\min_\ell \; \Psi(\ell) + \frac{\rho}{2}\Big\| S^k + \ell\,\mathbf{1}^\top - Z^k + \frac{\Lambda^k}{\rho} \Big\|_F^2, \\[1ex]
