@@ -3,6 +3,7 @@
 ## Modeling and Algorithm Iteration Framework
 
 This repository implements image denoising and background extraction algorithms based on deep learning and traditional optimization methods. It primarily implements a Plug-and-Play Alternating Direction Method of Multipliers (ADMM) for solving the following optimization problem:
+
 ![image](https://github.com/user-attachments/assets/b1cf70d1-943b-4e50-bacb-18085d83f2f8)
 
 
